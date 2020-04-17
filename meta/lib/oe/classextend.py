@@ -4,6 +4,11 @@
 
 import collections
 
+def get_packages(d):
+    pkgs = d.getVar("PACKAGES_NONML")
+    extcls = d.getVar("EXTENDERCLASS")
+    return extcls.rename_packages_internal(pkgs)
+
 class ClassExtender(object):
     def __init__(self, extname, d):
         self.extname = extname
@@ -109,7 +114,19 @@ class ClassExtender(object):
                continue
             self.pkgs_mapping.append([pkg, self.extend_name(pkg)])
 
-        self.d.setVar("PACKAGES", " ".join([row[1] for row in self.pkgs_mapping]))
+        self.d.setVar("PACKAGES_NONML", self.d.getVar("PACKAGES", False))
+        self.d.setVar("PACKAGES", "${@oe.classextend.get_packages(d)}")
+        self.d.setVar("EXTENDERCLASS", self)
+
+    def rename_packages_internal(self, pkgs):
+        self.pkgs_mapping = []
+        for pkg in (self.d.expand(pkgs) or "").split():
+            if pkg.startswith(self.extname):
+               self.pkgs_mapping.append([pkg.split(self.extname + "-")[1], pkg])
+               continue
+            self.pkgs_mapping.append([pkg, self.extend_name(pkg)])
+
+        return " ".join([row[1] for row in self.pkgs_mapping])
 
     def rename_package_variables(self, variables):
         for pkg_mapping in self.pkgs_mapping:
