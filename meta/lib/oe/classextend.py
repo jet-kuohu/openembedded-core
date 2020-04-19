@@ -9,11 +9,16 @@ def get_packages(d):
     extcls = d.getVar("EXTENDERCLASS")
     return extcls.rename_packages_internal(pkgs)
 
+def get_depends(d):
+    extcls = d.getVar("EXTENDERCLASS")
+    return extcls. map_depends_variable("DEPENDS_NONML")
+
 class ClassExtender(object):
     def __init__(self, extname, d):
         self.extname = extname
         self.d = d
         self.pkgs_mapping = []
+        self.d.setVar("EXTENDERCLASS", self)
 
     def extend_name(self, name):
         if name.startswith("kernel-") or name == "virtual/kernel":
@@ -29,7 +34,7 @@ class ClassExtender(object):
             if not subs.startswith(self.extname):
                 return "virtual/" + self.extname + "-" + subs
             return name
-        if name.startswith("/"):
+        if name.startswith("/") or (name.startswith("${") and name.endswith("}")):
             return name
         if not name.startswith(self.extname):
             return self.extname + "-" + name
@@ -94,8 +99,14 @@ class ClassExtender(object):
         for dep in deps:
             newdeps[self.map_depends(dep)] = deps[dep]
 
-        self.d.setVar(varname, bb.utils.join_deps(newdeps, False).replace("EXTENDPKGV", "${EXTENDPKGV}"))
+        if varname == "DEPENDS":
+            self.d.setVar("DEPENDS_NONML", self.d.getVar("DEPENDS", False))
+            self.d.setVar("DEPENDS", "${@oe.classextend.get_depends(d)}")
+        ret = bb.utils.join_deps(newdeps, False).replace("EXTENDPKGV", "${EXTENDPKGV}")
         self.d.setVar("EXTENDPKGV", orig)
+        if varname == "DEPENDS_NONML" or varname == "DEPENDS":
+            return ret
+        self.d.setVar(varname, ret)
 
     def map_packagevars(self):
         for pkg in (self.d.getVar("PACKAGES").split() + [""]):
@@ -116,7 +127,6 @@ class ClassExtender(object):
 
         self.d.setVar("PACKAGES_NONML", self.d.getVar("PACKAGES", False))
         self.d.setVar("PACKAGES", "${@oe.classextend.get_packages(d)}")
-        self.d.setVar("EXTENDERCLASS", self)
 
     def rename_packages_internal(self, pkgs):
         self.pkgs_mapping = []
@@ -130,6 +140,8 @@ class ClassExtender(object):
 
     def rename_package_variables(self, variables):
         for pkg_mapping in self.pkgs_mapping:
+            if pkg_mapping[0].startswith("${") and pkg_mapping[0].endswith("}"):
+                continue
             for subs in variables:
                 self.d.renameVar("%s_%s" % (subs, pkg_mapping[0]), "%s_%s" % (subs, pkg_mapping[1]))
 
